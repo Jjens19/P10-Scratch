@@ -35,6 +35,18 @@ void RttCalc(Time totalRtt, int RttCount, Time lastTotalRtt, int lastRttCount){
 		}
 }
 
+void SetTcpCongestionControl(Ptr<Node> node, std::string tcpVariant) {
+    // Lookup the TypeId for the desired TCP variant
+    TypeId tid = TypeId::LookupByName(tcpVariant);
+    // Create a configuration path for the specific node
+    std::stringstream nodeId;
+    nodeId << node->GetId();
+    std::string specificNode = "/NodeList/" + nodeId.str() + "/$ns3::TcpL4Protocol/SocketType";
+    // Set the TCP variant for the specific node
+    Config::Set(specificNode, TypeIdValue(tid));
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -58,7 +70,9 @@ int main(int argc, char *argv[])
     NodeContainer terminals;
     terminals.Create(10);
 
-    Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpLinuxReno"));
+    //Set global CCA
+    //Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpLinuxReno"));
+    
 
     NodeContainer csmaSwitch;
     csmaSwitch.Create(2);
@@ -108,6 +122,11 @@ int main(int argc, char *argv[])
 
 	uint16_t port = 9;
 
+    // Example: Set TCP NewReno for node 9
+    SetTcpCongestionControl(terminals.Get(9), "ns3::TcpLinuxReno");
+    // Example: Set TCP Vegas for node 8
+    SetTcpCongestionControl(terminals.Get(8), "ns3::TcpCubic");
+
 	// Correctly obtain the address of N0, the receiver
 	Ipv4Address receiverAddress0 = interfaces.GetAddress(0);
 	Address sinkAddress0(InetSocketAddress(receiverAddress0, port));
@@ -118,14 +137,14 @@ int main(int argc, char *argv[])
 
     // Set up N9 as sender app
 	Ptr<MyTcpApp> senderApp9 = CreateObject<MyTcpApp>();
-	senderApp9->Setup(nullptr, sinkAddress0, 1024, DataRate("0.3Mbps")); // Configure your app
+	senderApp9->Setup(nullptr, sinkAddress0, 1024, DataRate("1Mbps")); // Configure your app
 	terminals.Get(9)->AddApplication(senderApp9); // Install the app on N9, the sender
 	senderApp9->SetStartTime(Seconds(0.1));
 	senderApp9->SetStopTime(Seconds(simLength));
 
     // Set up N8 as sender app
 	Ptr<MyTcpApp> senderApp8 = CreateObject<MyTcpApp>();
-	senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("0.5Mbps")); // Configure your app
+	senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("1Mbps")); // Configure your app
 	terminals.Get(8)->AddApplication(senderApp8); // Install the app on N8, the sender
 	senderApp8->SetStartTime(Seconds(0.1));
 	senderApp8->SetStopTime(Seconds(simLength));
