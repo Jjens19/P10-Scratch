@@ -16,23 +16,17 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("Project");
 
-Time totalRtt(0);
-uint32_t RttCount = 0;
-Time sessionRtt(0);
-uint32_t sessionRttCount = 0;
-Time avgRtt(0);
-Time lastTotalRtt9(0);
-uint32_t lastRttCount9 = 0;
-Time lastTotalRtt8(0);
-uint32_t lastRttCount8 = 0;
 
 
-void RttCalc(Time totalRtt, int RttCount, Time lastTotalRtt, int lastRttCount){
-    if(RttCount != lastRttCount){
-		    sessionRtt = totalRtt - lastTotalRtt;
-			sessionRttCount = RttCount - lastRttCount;
-			avgRtt = sessionRtt / sessionRttCount;
+Time RttCalc(Time totalRttCalc, int RttCountCalc, Time lastTotalRttCalc, int lastRttCountCalc){
+    Time sessionRtt(0);
+    uint32_t sessionRttCount = 0;
+    if(RttCountCalc != lastRttCountCalc){
+		    sessionRtt = totalRttCalc - lastTotalRttCalc;
+			sessionRttCount = RttCountCalc - lastRttCountCalc;
+			return(sessionRtt / sessionRttCount);
 		}
+    return Time(0);
 }
 
 void SetTcpCongestionControl(Ptr<Node> node, std::string tcpVariant) {
@@ -122,9 +116,9 @@ int main(int argc, char *argv[])
 
 	uint16_t port = 9;
 
-    // Example: Set TCP NewReno for node 9
+    // Set TCP LinuxReno for node 9
     SetTcpCongestionControl(terminals.Get(9), "ns3::TcpLinuxReno");
-    // Example: Set TCP Vegas for node 8
+    // Set TCP Cubic for node 8
     SetTcpCongestionControl(terminals.Get(8), "ns3::TcpCubic");
 
 	// Correctly obtain the address of N0, the receiver
@@ -176,6 +170,14 @@ int main(int argc, char *argv[])
     NS_LOG_INFO("Run Simulation.");
     float total = 0;
     
+    Time totalRtt(0);
+    uint32_t RttCount = 0;
+    Time avgRtt(0);
+    
+    Time lastTotalRtt9(0);
+    uint32_t lastRttCount9 = 0;
+    Time lastTotalRtt8(0);
+    uint32_t lastRttCount8 = 0;
 
     uint32_t packetCount = 0;
     uint32_t totalPacketSize = 0;
@@ -195,7 +197,7 @@ int main(int argc, char *argv[])
         
         totalRtt = senderApp9->GetTotalRtt();
 		RttCount = senderApp9->GetRttCount();
-		RttCalc(totalRtt, RttCount, lastTotalRtt9, lastRttCount9);
+		avgRtt = RttCalc(totalRtt, RttCount, lastTotalRtt9, lastRttCount9);
         lastTotalRtt9 = totalRtt;
 	    lastRttCount9 = RttCount;
 		
@@ -213,7 +215,7 @@ int main(int argc, char *argv[])
 
         totalRtt = senderApp8->GetTotalRtt();
 		RttCount = senderApp8->GetRttCount();
-		RttCalc(totalRtt, RttCount, lastTotalRtt8, lastRttCount8);
+		avgRtt = RttCalc(totalRtt, RttCount, lastTotalRtt8, lastRttCount8);
         lastTotalRtt8 = totalRtt;
 	    lastRttCount8 = RttCount;
 		
