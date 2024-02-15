@@ -16,6 +16,24 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("Project");
 
+Time totalRtt(0);
+uint32_t RttCount = 0;
+Time sessionRtt(0);
+uint32_t sessionRttCount = 0;
+Time avgRtt(0);
+Time lastTotalRtt9(0);
+uint32_t lastRttCount9 = 0;
+Time lastTotalRtt8(0);
+uint32_t lastRttCount8 = 0;
+
+
+void RttCalc(Time totalRtt, int RttCount, Time lastTotalRtt, int lastRttCount){
+    if(RttCount != lastRttCount){
+		    sessionRtt = totalRtt - lastTotalRtt;
+			sessionRttCount = RttCount - lastRttCount;
+			avgRtt = sessionRtt / sessionRttCount;
+		}
+}
 
 
 int main(int argc, char *argv[])
@@ -91,19 +109,40 @@ int main(int argc, char *argv[])
 	uint16_t port = 9;
 
 	// Correctly obtain the address of N0, the receiver
-	Ipv4Address receiverAddress = interfaces.GetAddress(0);
-	Address sinkAddress(InetSocketAddress(receiverAddress, port));
+	Ipv4Address receiverAddress0 = interfaces.GetAddress(0);
+	Address sinkAddress0(InetSocketAddress(receiverAddress0, port));
 
-	Ptr<MyTcpApp> senderApp = CreateObject<MyTcpApp>();
-	senderApp->Setup(nullptr, sinkAddress, 1024, DataRate("0.1Mbps")); // Configure your app
-	terminals.Get(9)->AddApplication(senderApp); // Install the app on N9, the sender
-	senderApp->SetStartTime(Seconds(0.1));
-	senderApp->SetStopTime(Seconds(simLength));
+    // Correctly obtain the address of N1, the receiver
+	Ipv4Address receiverAddress1 = interfaces.GetAddress(1);
+	Address sinkAddress1(InetSocketAddress(receiverAddress1, port));
 
+    // Set up N9 as sender app
+	Ptr<MyTcpApp> senderApp9 = CreateObject<MyTcpApp>();
+	senderApp9->Setup(nullptr, sinkAddress0, 1024, DataRate("0.3Mbps")); // Configure your app
+	terminals.Get(9)->AddApplication(senderApp9); // Install the app on N9, the sender
+	senderApp9->SetStartTime(Seconds(0.1));
+	senderApp9->SetStopTime(Seconds(simLength));
+
+    // Set up N8 as sender app
+	Ptr<MyTcpApp> senderApp8 = CreateObject<MyTcpApp>();
+	senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("0.5Mbps")); // Configure your app
+	terminals.Get(8)->AddApplication(senderApp8); // Install the app on N8, the sender
+	senderApp8->SetStartTime(Seconds(0.1));
+	senderApp8->SetStopTime(Seconds(simLength));
+
+    // Create packetsink helper
 	PacketSinkHelper sink("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), port));
-	ApplicationContainer sinkApp = sink.Install(terminals.Get(0)); // N0 as receiver
-	sinkApp.Start(Seconds(0.0));
-	sinkApp.Stop(Seconds(simLength));
+
+    // Create sink apps
+	ApplicationContainer sinkApp0 = sink.Install(terminals.Get(0)); // N0 as receiver
+    ApplicationContainer sinkApp1 = sink.Install(terminals.Get(1)); // N1 as receiver
+
+    // Start and stop sinkapps
+	sinkApp0.Start(Seconds(0.0));
+	sinkApp0.Stop(Seconds(simLength));
+
+    sinkApp1.Start(Seconds(0.0));
+	sinkApp1.Stop(Seconds(simLength));
 
     
 
@@ -118,20 +157,16 @@ int main(int argc, char *argv[])
     NS_LOG_INFO("Run Simulation.");
     float total = 0;
     
-    Time totalRtt(0);
-    uint32_t RttCount = 0;
-    Time sessionRtt(0);
-    uint32_t sessionRttCount = 0;
-    Time avgRtt(0);
-    Time lastTotalRtt(0);
-    uint32_t lastRttCount = 0;
-    
+
     uint32_t packetCount = 0;
     uint32_t totalPacketSize = 0;
     uint32_t sessionPacketCount = 0;
     uint32_t sessionPacketSize = 0;
-    uint32_t lastPacketSize = 0;
-    uint32_t lastPacketCount = 0;
+    uint32_t lastPacketSize9 = 0;
+    uint32_t lastPacketCount9 = 0;
+    uint32_t lastPacketSize8 = 0;
+    uint32_t lastPacketCount8 = 0;
+    
     do
     {
         total++;
@@ -139,26 +174,42 @@ int main(int argc, char *argv[])
         Simulator::Run();
         
         
-        totalRtt = senderApp->GetTotalRtt();
-		RttCount = senderApp->GetRttCount();
-		if(RttCount != lastRttCount){
-		    sessionRtt = totalRtt - lastTotalRtt;
-			sessionRttCount = RttCount - lastRttCount;
-			avgRtt = sessionRtt / sessionRttCount;
-		}
-		lastTotalRtt = totalRtt;
-		lastRttCount = RttCount;
+        totalRtt = senderApp9->GetTotalRtt();
+		RttCount = senderApp9->GetRttCount();
+		RttCalc(totalRtt, RttCount, lastTotalRtt9, lastRttCount9);
+        lastTotalRtt9 = totalRtt;
+	    lastRttCount9 = RttCount;
 		
 		
-		totalPacketSize = senderApp->GetTotalPacketSize();
-		packetCount = senderApp->GetPacketCount();
-		sessionPacketSize = totalPacketSize - lastPacketSize;
-		sessionPacketCount = packetCount - lastPacketCount;
-		lastPacketSize = totalPacketSize;
-		lastPacketCount = packetCount;
-			
-		std::cout << "Bytes sent: " << sessionPacketSize << "  ||  Packets sent: " << sessionPacketCount << "  ||  Average RTT: " << avgRtt << std::endl;
+		totalPacketSize = senderApp9->GetTotalPacketSize();
+        sessionPacketSize = totalPacketSize - lastPacketSize9;
+        lastPacketSize9 = totalPacketSize;
+
+		packetCount = senderApp9->GetPacketCount();
+        sessionPacketCount = packetCount - lastPacketCount9;
+        lastPacketCount9 = packetCount;
 		
+	    std::cout << "N9 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Packets sent: " << sessionPacketCount << "  ||  Average RTT: " << avgRtt << std::endl;
+		
+
+        totalRtt = senderApp8->GetTotalRtt();
+		RttCount = senderApp8->GetRttCount();
+		RttCalc(totalRtt, RttCount, lastTotalRtt8, lastRttCount8);
+        lastTotalRtt8 = totalRtt;
+	    lastRttCount8 = RttCount;
+		
+		
+		totalPacketSize = senderApp8->GetTotalPacketSize();
+        sessionPacketSize = totalPacketSize - lastPacketSize8;
+        lastPacketSize8 = totalPacketSize;
+
+		packetCount = senderApp8->GetPacketCount();
+        sessionPacketCount = packetCount - lastPacketCount8;
+        lastPacketCount8 = packetCount;
+		
+	    std::cout << "N8 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Packets sent: " << sessionPacketCount << "  ||  Average RTT: " << avgRtt << std::endl;
+
+        std::cout << std::endl;
 		//std::cout << "Total RTT: " << totalRtt << std::endl;
 		//std::cout << "RTT count: " << RttCount << std::endl;
 
