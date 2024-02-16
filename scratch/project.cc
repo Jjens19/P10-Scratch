@@ -131,14 +131,14 @@ int main(int argc, char *argv[])
 
     // Set up N9 as sender app
 	Ptr<MyTcpApp> senderApp9 = CreateObject<MyTcpApp>();
-	senderApp9->Setup(nullptr, sinkAddress0, 1024, DataRate("1Mbps")); // Configure your app
+	senderApp9->Setup(nullptr, sinkAddress0, 1024, DataRate("2Mbps")); // Configure your app
 	terminals.Get(9)->AddApplication(senderApp9); // Install the app on N9, the sender
 	senderApp9->SetStartTime(Seconds(0.1));
 	senderApp9->SetStopTime(Seconds(simLength));
 
     // Set up N8 as sender app
 	Ptr<MyTcpApp> senderApp8 = CreateObject<MyTcpApp>();
-	senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("1Mbps")); // Configure your app
+	senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("2Mbps")); // Configure your app
 	terminals.Get(8)->AddApplication(senderApp8); // Install the app on N8, the sender
 	senderApp8->SetStartTime(Seconds(0.1));
 	senderApp8->SetStopTime(Seconds(simLength));
@@ -178,6 +178,7 @@ int main(int argc, char *argv[])
     uint32_t lastRttCount9 = 0;
     Time lastTotalRtt8(0);
     uint32_t lastRttCount8 = 0;
+    uint32_t sessionRttCount = 0;
 
     uint32_t packetCount = 0;
     uint32_t totalPacketSize = 0;
@@ -187,6 +188,8 @@ int main(int argc, char *argv[])
     uint32_t lastPacketCount9 = 0;
     uint32_t lastPacketSize8 = 0;
     uint32_t lastPacketCount8 = 0;
+
+    
     
     do
     {
@@ -198,6 +201,7 @@ int main(int argc, char *argv[])
         totalRtt = senderApp9->GetTotalRtt();
 		RttCount = senderApp9->GetRttCount();
 		avgRtt = RttCalc(totalRtt, RttCount, lastTotalRtt9, lastRttCount9);
+        sessionRttCount = RttCount - lastRttCount9;
         lastTotalRtt9 = totalRtt;
 	    lastRttCount9 = RttCount;
 		
@@ -210,12 +214,13 @@ int main(int argc, char *argv[])
         sessionPacketCount = packetCount - lastPacketCount9;
         lastPacketCount9 = packetCount;
 		
-	    std::cout << "N9 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Packets sent: " << sessionPacketCount << "  ||  Average RTT: " << avgRtt << std::endl;
+	    std::cout << "N9 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Tx: " << sessionPacketCount << "  ||  Rx: " << sessionRttCount << "  ||  Average RTT: " << avgRtt << std::endl;
 		
 
         totalRtt = senderApp8->GetTotalRtt();
 		RttCount = senderApp8->GetRttCount();
 		avgRtt = RttCalc(totalRtt, RttCount, lastTotalRtt8, lastRttCount8);
+        sessionRttCount = RttCount - lastRttCount8;
         lastTotalRtt8 = totalRtt;
 	    lastRttCount8 = RttCount;
 		
@@ -228,7 +233,7 @@ int main(int argc, char *argv[])
         sessionPacketCount = packetCount - lastPacketCount8;
         lastPacketCount8 = packetCount;
 		
-	    std::cout << "N8 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Packets sent: " << sessionPacketCount << "  ||  Average RTT: " << avgRtt << std::endl;
+	    std::cout << "N8 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Tx: " << sessionPacketCount << "  ||  Rx: " << sessionRttCount << "  ||  Average RTT: " << avgRtt << std::endl;
 
         std::cout << std::endl;
 		//std::cout << "Total RTT: " << totalRtt << std::endl;
