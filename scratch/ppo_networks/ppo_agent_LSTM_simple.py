@@ -8,17 +8,19 @@ import tensorflow_probability as tfp
 
 
 class ActorNetwork(keras.Model):
-    def __init__(self, n_actions, fc1_dims=256, fc2_dims=256):
+    def __init__(self, n_actions, l1_dims=256, l2_dims=256):
         super(ActorNetwork, self).__init__()
 
-        self.fc1 = layers.LSTM(fc1_dims, activation='relu')
-        self.fc2 = layers.Dense(fc2_dims, activation='relu')
-        self.fc3 = layers.Dense(n_actions, activation='softmax')
+        self.l1 = layers.LSTM(l1_dims, activation='relu')
+        self.l2 = layers.Dense(l2_dims, activation='relu')
+        self.l3 = layers.Dense(n_actions, activation='softmax')
 
     def call(self, state):
-        x = self.fc1(state)
-        x = self.fc2(x)
-        x = self.fc3(x)
+        x = self.l1(state)
+        
+        x = self.l2(x)
+
+        x = self.l3(x)
 
         return x
 

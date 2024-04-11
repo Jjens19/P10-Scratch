@@ -17,7 +17,11 @@ class ActorNetwork(keras.Model):
 
     def call(self, state):
         x = self.fc1(state)
+
+
         x = self.fc2(x)
+
+
         x = self.fc3(x)
 
         return x

@@ -16,10 +16,13 @@ def plot_learning_curve(x, scores, figure_file):
 
 
 
-# Network selection
+# ------------ Network selection -----------------------------------------------------------------------
 
-from ppo_networks.ppo_agent_LSTM_simple import Agent
-#from ppo_networks.ppo_agent_3_dense import Agent
+# Simple Deep networks
+from ppo_networks.ppo_agent_3_dense import Agent
+
+# RNNs and LSTMs
+#from ppo_networks.ppo_agent_LSTM_simple import Agent
 
 
 
@@ -29,11 +32,11 @@ from ppo_networks.ppo_agent_LSTM_simple import Agent
 model_name = "ppo_proto_v1"
 
 # RNN Memory duration (0 or 1 for non-RNN network)
-time_steps = 10
+time_steps = 0
 
 # PATHS
 # Path to your ns-3 script file
-ns3_script = "scratch/q-training_line.cc"
+ns3_script = "scratch/tests/1/test_1.cc"
 
 # Path for CWND size file
 cwnd_path = "scratch/rate.txt"
@@ -45,18 +48,18 @@ os.makedirs(model_folder_path, exist_ok=True)
 
 # Training duration
 sample_frequency = 1 # Amount of steps/samples per second
-episodes = 2 
+episodes = 50
 steps_max = 400             * sample_frequency # First number indicates training duration in simulated seconds
 
 # Batch size - Amount of steps done before training on them at once
 batch_size = 64 
 
 # Number of batches to collect before training on them seperatly
-n_epochs = 1
+n_epochs = 10
 
 # Learning hyperparameters
-learning_rate = 0.05
-discount_rate = 0.95
+learning_rate = 0.0005
+discount_rate = 0.99
 
 # Exploration
 exploration_rate       = 1
@@ -68,10 +71,10 @@ exploration_rate_decay = 0.005
 
 # List of possible actions
 actions = [False,             # Nothing
-           lambda x: x + 10,  # Increase by 10
+           lambda x: x + 3,   # Increase by 10
            lambda x: x - 1,   # Decrease by 1
-           lambda x: x + 1.1, # Increase by 10%
-           lambda x: x + 0.9  # Decrease by 10%
+           lambda x: x * 1.1, # Increase by 10%
+           lambda x: x * 0.9  # Decrease by 10%
            ]
 
 # State sizes
@@ -84,8 +87,8 @@ states = (state_size_send, state_size_acks, state_size_rtt)
 
 
 # Reward factors TODO
-reward_factor_bytes = 10 # 
-reward_factor_rtt   = 1 # 
+reward_factor_bytes = 1 # 
+reward_factor_rtt   = 5 # 
 reward_factor_ack_ratio = 1 #
 utility = 0 
 utility_threshold = 0.9 # How big should a change be before a reward/penalty is given
@@ -108,7 +111,7 @@ def get_next_state(process):
     # read the simulation output or wait for it to finish
     reading = process.stdout.readline()
     temp_list = reading.split('\n')[0].split(',')
-    [send, acks, n_bytes, rtt] = [int(xx) for xx in temp_list] 
+    [send, acks, send_bytes, received_bytes, rtt] = [int(xx) for xx in temp_list] 
     
     global state_log
     state_log += reading
@@ -124,7 +127,7 @@ def get_next_state(process):
     
     state_array = np.array([send, acks, rtt])
 
-    return np.reshape(state_array, (1,3)) , (n_bytes, ack_perc, finished)
+    return np.reshape(state_array, (1,3)) , (received_bytes, ack_perc, finished)
     return (state_send, state_acks, state_rtt), (n_bytes, ack_perc, finished)
 
 def get_reward(n_bytes, ack_perc, rtt): 
@@ -157,7 +160,7 @@ def perform_action(process, action):
     if action != False:
         cwnd = 0
         with open(cwnd_path, 'r') as file:
-            cwnd = float(file.read()) // 512 # Divide with minimum size of packets ...
+            cwnd = float(file.read()) / 512 # Divide with minimum size of packets ...
             #print(cwnd, action)
             
             cwnd = actions[action](cwnd) * 512 # Multiply with minimum size of packets ...
@@ -189,22 +192,47 @@ def perform_action(process, action):
     
     return new_state, reward, finished
 
+# ------------- Normalization struct -----------------------------
+
+class normalization():
+    def __init__(self, state_len) -> None:
+        self.count = 0
+        self.mean = [0] * state_len
+        self.deviation = [0] * state_len
+    
+    def update(self, new_values):
+        self.count += 1
+        for ii, new_value in enumerate(new_values[0]):
+            delta1 = new_value - self.mean[ii]
+            self.mean[ii] += delta1 / self.count
+
+            delta2 = new_value -self.mean[ii]
+            self.deviation[ii] += delta1 * delta2
+
+    def normalize(self, values):
+        print(self.count, self.mean, self.deviation, values)
+        return [[(value - self.mean[ii]) / self.deviation[ii] for ii, value in enumerate(values[0])]]
+
 
 # ------------- Initialization -----------------------------
 
 
-agent = Agent(n_actions = len(actions),     # Action space
-              batch_size= batch_size,       # Training batch size
-              alpha     = learning_rate,    # Learning rate
-              n_epochs  = n_epochs,         # Learning epochs             
-              input_dims= len(states),      # State space 
-              chkpt_dir = model_folder_path + '/')
+agent = Agent(n_actions     = len(actions),     # Action space
+              batch_size    = batch_size,       # Training batch size
+              alpha         = learning_rate,    # Learning rate
+              n_epochs      = n_epochs,         # Learning epochs             
+              input_dims    = len(states),      # State space 
+              gamma         = discount_rate,    # Discount rate
+              gae_lambda    = 0.95,             # GAE advantage parameter
+              chkpt_dir     = model_folder_path + '/')
 # Reward storage
 rewards_all_episodes = []
 
+# Input normalization struct list
+
 
 # ------------- Training loops ---------------------------
-
+print("Training start")
 for episode in range(episodes): #-----------------------------------Episode------------------------------------------
     reward_episode = 0
     # Reset congestion window
@@ -224,16 +252,16 @@ for episode in range(episodes): #-----------------------------------Episode-----
     
     # Get first state
     state, (n_bytes, ack_perc, _)  = get_next_state(process)
-
     get_reward(n_bytes, ack_perc, state[0][2]) # Set utulity value
+
     
-    if time_steps != 0 or time_steps != 1:
+
+    if time_steps != 0 and time_steps != 1:
         padding = np.zeros((time_steps-1, len(states)))
         state = np.vstack((padding, state))
     
     for step in range(steps_max): # ----------------------------------------STEP-----------------------------------------
     	#print("step",step)
-    	
         # Get action
         action, probabilities,  val = agent.choose_action(state)
         
@@ -256,6 +284,8 @@ for episode in range(episodes): #-----------------------------------Episode-----
             agent.learn()
         
 
+
+        # Updata state
         if time_steps == 0 or time_steps == 1:
             state = new_state
         elif time_steps > 1:
