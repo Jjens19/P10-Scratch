@@ -8,8 +8,10 @@ import tensorflow_probability as tfp
 
 
 class ActorNetwork(keras.Model):
-    def __init__(self, n_actions, l1_dims=256, l2_dims=256):
+    def __init__(self, n_actions, l1_dims=256, l2_dims=256, **kwargs):
         super(ActorNetwork, self).__init__()
+
+        self.n_actions = n_actions
 
         self.l1 = layers.LSTM(l1_dims, activation='relu')
         self.l2 = layers.Dense(l2_dims, activation='relu')
@@ -23,6 +25,12 @@ class ActorNetwork(keras.Model):
         x = self.l3(x)
 
         return x
+
+    def get_config(self):
+        config = super(ActorNetwork, self).get_config()
+        config.update({'n_actions': self.n_actions})
+        return config
+    
 
 
 class CriticNetwork(keras.Model):
@@ -119,7 +127,8 @@ class Agent:
 
     def load_models(self):
         print('... loading models ...')
-        self.actor = keras.models.load_model(self.chkpt_dir + 'actor.keras')
+        custom_objects = {'ActorNetwork': ActorNetwork}
+        self.actor = keras.models.load_model(self.chkpt_dir + 'actor.keras', custom_objects=custom_objects)
         self.critic = keras.models.load_model(self.chkpt_dir + 'critic.keras')
 
     def choose_action(self, observation):

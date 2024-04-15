@@ -8,8 +8,10 @@ from tensorflow.keras import layers
 
 
 class ActorNetwork(keras.Model):
-    def __init__(self, n_actions, fc1_dims=256, fc2_dims=256):
+    def __init__(self, n_actions, fc1_dims=256, fc2_dims=256, **kwargs):
         super(ActorNetwork, self).__init__()
+
+        self.n_actions = n_actions
 
         self.fc1 = layers.Dense(fc1_dims, activation='relu')
         self.fc2 = layers.Dense(fc2_dims, activation='relu')
@@ -17,18 +19,18 @@ class ActorNetwork(keras.Model):
 
     def call(self, state):
         x = self.fc1(state)
-
-
         x = self.fc2(x)
-
-
         x = self.fc3(x)
 
         return x
 
+    def get_config(self):
+        config = super(ActorNetwork, self).get_config()
+        config.update({'n_actions': self.n_actions})
+        return config
 
 class CriticNetwork(keras.Model):
-    def __init__(self, fc1_dims=256, fc2_dims=256):
+    def __init__(self, fc1_dims=256, fc2_dims=256, **kwargs):
         super(CriticNetwork, self).__init__()
         self.fc1 = layers.Dense(fc1_dims, activation='relu')
         self.fc2 = layers.Dense(fc2_dims, activation='relu')
@@ -121,7 +123,8 @@ class Agent:
 
     def load_models(self):
         print('... loading models ...')
-        self.actor = keras.models.load_model(self.chkpt_dir + 'actor.keras')
+        custom_objects = {'ActorNetwork': ActorNetwork}
+        self.actor = keras.models.load_model(self.chkpt_dir + 'actor.keras', custom_objects=custom_objects)
         self.critic = keras.models.load_model(self.chkpt_dir + 'critic.keras')
 
     def choose_action(self, observation):
