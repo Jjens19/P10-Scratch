@@ -33,7 +33,6 @@ MyTcpApp::MyTcpApp()
       m_running(false),
       m_packetsSent(0),
       m_totalRtt(Seconds(0)), 
-      m_RttCount(0),
       m_totalPacketSize(0),
       m_packetCount(0) 
 {
@@ -108,7 +107,7 @@ void MyTcpApp::SendPacket(void)
     m_socket->Send(packet);
     m_totalPacketSize = m_totalPacketSize + m_packetSize;
     m_packetCount += 1;
-    //NS_LOG_UNCOND("Packet: " << m_packetSize << "|| Total: " << m_totalPacketSize);
+    
 
 
     if (m_running)
@@ -119,12 +118,10 @@ void MyTcpApp::SendPacket(void)
 
 void MyTcpApp::RttChange(Time oldRtt, Time newRtt)
 {
-    m_totalRtt = m_totalRtt + newRtt; // Update the last known RTT
-    m_RttCount += 1;
-    //NS_LOG_UNCOND("RTT changed from " << oldRtt.GetSeconds() << "s to " << newRtt.GetSeconds() << "s.");
+    m_totalRtt = m_totalRtt + newRtt; // Update the last known RTT 
 }
 
 
 
-} // Namespace ns3
 
+} // Namespace ns3
