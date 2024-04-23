@@ -26,7 +26,7 @@ public:
     void RttChange(Time oldRtt, Time newRtt);
     
     Time GetTotalRtt(void) const { return m_totalRtt; } // Public getter for the total RTT
-    uint32_t GetRttCount(void) const { return m_RttCount; }
+    uint32_t GetRxCount(void) const { return m_RxCount; }
     uint32_t GetTotalPacketSize(void) const { return m_totalPacketSize; }
     uint32_t GetPacketCount(void) const { return m_packetCount; }
 
@@ -53,7 +53,7 @@ private:
     void ConnectionFailed (Ptr<Socket> socket);
     
     Time m_totalRtt;
-    uint32_t m_RttCount;
+    uint32_t m_RxCount;
     uint32_t m_totalPacketSize;
     uint32_t m_packetCount;
 };
@@ -61,4 +61,3 @@ private:
 } // namespace ns3
 
 #endif // MY_TCP_APP_H
-
