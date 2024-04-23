@@ -15,16 +15,14 @@
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("Project");
+int g_ackReceived = 0;
 
 
-
-Time RttCalc(Time totalRttCalc, int RttCountCalc, Time lastTotalRttCalc, int lastRttCountCalc){
+Time RttCalc(Time totalRttCalc, int RttCountCalc, Time lastTotalRttCalc){
     Time sessionRtt(0);
-    uint32_t sessionRttCount = 0;
-    if(RttCountCalc != lastRttCountCalc){
+    if(RttCountCalc != 0){
 		    sessionRtt = totalRttCalc - lastTotalRttCalc;
-			sessionRttCount = RttCountCalc - lastRttCountCalc;
-			return(sessionRtt / sessionRttCount);
+			return(sessionRtt / RttCountCalc);
 		}
     return Time(0);
 }
@@ -40,6 +38,10 @@ void SetTcpCongestionControl(Ptr<Node> node, std::string tcpVariant) {
     Config::Set(specificNode, TypeIdValue(tid));
 }
 
+void RxPacketsTrace(Ptr<const Packet> packet, const Address &addr)
+{
+    g_ackReceived++;
+}
 
 
 int main(int argc, char *argv[])
@@ -49,6 +51,9 @@ int main(int argc, char *argv[])
     
     
     float simLength = 90.0;
+    std::string throughput = "30000kbps";
+    std::string agentSendRate = "5000kbps";
+    int packetSize = 256;
 
     #if 1
     LogComponentEnable("Project", LOG_LEVEL_INFO);
@@ -73,7 +78,7 @@ int main(int argc, char *argv[])
 
     NS_LOG_INFO("Build Topology");
     CsmaHelper csma;
-    csma.SetChannelAttribute("DataRate", DataRateValue(DataRate("1000kbps")));
+    csma.SetChannelAttribute("DataRate", DataRateValue(DataRate(throughput)));
     csma.SetChannelAttribute("Delay", TimeValue(MilliSeconds(2)));
 
     NetDeviceContainer terminalDevices;
@@ -119,7 +124,7 @@ int main(int argc, char *argv[])
     // Set TCP LinuxReno for node 9
     SetTcpCongestionControl(terminals.Get(9), "ns3::TcpLinuxReno");
     // Set TCP Cubic for node 8
-    SetTcpCongestionControl(terminals.Get(8), "ns3::TcpCubic");
+    //SetTcpCongestionControl(terminals.Get(8), "ns3::TcpCubic");
 
 	// Correctly obtain the address of N0, the receiver
 	Ipv4Address receiverAddress0 = interfaces.GetAddress(0);
@@ -131,31 +136,32 @@ int main(int argc, char *argv[])
 
     // Set up N9 as sender app
 	Ptr<MyTcpApp> senderApp9 = CreateObject<MyTcpApp>();
-	senderApp9->Setup(nullptr, sinkAddress0, 1024, DataRate("2Mbps")); // Configure your app
+	senderApp9->Setup(nullptr, sinkAddress0, packetSize, DataRate(agentSendRate)); // Configure your app
 	terminals.Get(9)->AddApplication(senderApp9); // Install the app on N9, the sender
 	senderApp9->SetStartTime(Seconds(0.1));
 	senderApp9->SetStopTime(Seconds(simLength));
 
     // Set up N8 as sender app
-	Ptr<MyTcpApp> senderApp8 = CreateObject<MyTcpApp>();
-	senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("2Mbps")); // Configure your app
-	terminals.Get(8)->AddApplication(senderApp8); // Install the app on N8, the sender
-	senderApp8->SetStartTime(Seconds(0.1));
-	senderApp8->SetStopTime(Seconds(simLength));
+	//Ptr<MyTcpApp> senderApp8 = CreateObject<MyTcpApp>();
+	//senderApp8->Setup(nullptr, sinkAddress1, 1024, DataRate("1Mbps")); // Configure your app
+	//terminals.Get(8)->AddApplication(senderApp8); // Install the app on N8, the sender
+	//senderApp8->SetStartTime(Seconds(0.1));
+	//senderApp8->SetStopTime(Seconds(simLength));
 
     // Create packetsink helper
 	PacketSinkHelper sink("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), port));
 
     // Create sink apps
 	ApplicationContainer sinkApp0 = sink.Install(terminals.Get(0)); // N0 as receiver
-    ApplicationContainer sinkApp1 = sink.Install(terminals.Get(1)); // N1 as receiver
+    sinkApp0.Get(0)->TraceConnectWithoutContext("Rx", MakeCallback(&RxPacketsTrace));
+    //ApplicationContainer sinkApp1 = sink.Install(terminals.Get(1)); // N1 as receiver
 
     // Start and stop sinkapps
 	sinkApp0.Start(Seconds(0.0));
 	sinkApp0.Stop(Seconds(simLength));
 
-    sinkApp1.Start(Seconds(0.0));
-	sinkApp1.Stop(Seconds(simLength));
+    //sinkApp1.Start(Seconds(0.0));
+	//sinkApp1.Stop(Seconds(simLength));
 
     
 
@@ -194,16 +200,14 @@ int main(int argc, char *argv[])
     do
     {
         total++;
+        g_ackReceived = 0;
         Simulator::Stop(Seconds(1.0));
         Simulator::Run();
         
         
         totalRtt = senderApp9->GetTotalRtt();
-		RttCount = senderApp9->GetRttCount();
-		avgRtt = RttCalc(totalRtt, RttCount, lastTotalRtt9, lastRttCount9);
-        sessionRttCount = RttCount - lastRttCount9;
+		avgRtt = RttCalc(totalRtt, g_ackReceived, lastTotalRtt9);
         lastTotalRtt9 = totalRtt;
-	    lastRttCount9 = RttCount;
 		
 		
 		totalPacketSize = senderApp9->GetTotalPacketSize();
@@ -213,14 +217,16 @@ int main(int argc, char *argv[])
 		packetCount = senderApp9->GetPacketCount();
         sessionPacketCount = packetCount - lastPacketCount9;
         lastPacketCount9 = packetCount;
-		
-	    std::cout << "N9 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Tx: " << sessionPacketCount << "  ||  Rx: " << sessionRttCount << "  ||  Average RTT: " << avgRtt << std::endl;
-		
 
+		
+	    std::cout << "N9 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Tx: " << sessionPacketCount << "  ||  Rx: " << g_ackReceived << "  ||  Average RTT: " << avgRtt << std::endl;
+		
+        /*
         totalRtt = senderApp8->GetTotalRtt();
 		RttCount = senderApp8->GetRttCount();
 		avgRtt = RttCalc(totalRtt, RttCount, lastTotalRtt8, lastRttCount8);
         sessionRttCount = RttCount - lastRttCount8;
+        //std::cout << RttCount << " " << lastRttCount8 << std::endl;
         lastTotalRtt8 = totalRtt;
 	    lastRttCount8 = RttCount;
 		
@@ -233,11 +239,12 @@ int main(int argc, char *argv[])
         sessionPacketCount = packetCount - lastPacketCount8;
         lastPacketCount8 = packetCount;
 		
-	    std::cout << "N8 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Tx: " << sessionPacketCount << "  ||  Rx: " << sessionRttCount << "  ||  Average RTT: " << avgRtt << std::endl;
-
+        */
+	    //std::cout << "N8 >> " << "Bytes sent: " << sessionPacketSize << "  ||  Tx: " << sessionPacketCount << "  ||  Rx: " << sessionRttCount << "  ||  Average RTT: " << avgRtt << std::endl;
         std::cout << std::endl;
 		//std::cout << "Total RTT: " << totalRtt << std::endl;
 		//std::cout << "RTT count: " << RttCount << std::endl;
+        
 
     } while (total<20);
 
