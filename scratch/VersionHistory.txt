@@ -1,0 +1,49 @@
+Alpha V1.0
+	- Basic dumbbell topology
+	- TCP connection
+	- 10 nodes and 2 switches
+	- Adjustable data rate between switches (ln 64)
+	- Adjustable data rate for individual nodes
+	- Default TCP congestion control algorithm (CUBIC) [https://www.nsnam.org/docs/models/html/tcp.html]
+	- Basic logging of packets sent between nodes
+	- You can specify what nodes communicate with who and for how long
+	- Nodes send a constant stream of packets to the receiver for the specified amount of time
+	
+Current topology:
+
+	      N0         N5
+    N1  |          |  N6
+      \ |          | /
+  N2-- S1----------S2 --N7
+      / |          | \
+    N3  |          |  N8
+        N4         N9
+        
+        
+        
+-------------------------------------------------------------------------
+
+Alpha V1.1
+	- Added custom congestion control algorithm which
+		increases by 10 if there is no congestion
+		decreases by 10 if there is congestion
+		
+
+-------------------------------------------------------------------------
+
+Alpha V1.2
+	- Custom congestion control algorithm now reads a value from a file
+		The algorithm sets the cWnd to this value, instead of adding or subtracting
+	- Tracks and prints the following values
+		Amount of packets sent over a given time
+		Amount of ACKs received over a given time
+		Amount of bytes sent over a given time
+		Sum of RTT between sent packets and their respective ACKs
+	- Simulation now runs in specified fixed-length segments 
+		until no packets are sent and no ACKs are received
+		
+
+-------------------------------------------------------------------------
+
+Alpha V1.2.2
+	- Reimplemented the OnOff helpers for each node

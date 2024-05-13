@@ -2,27 +2,25 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import layers
 import tensorflow_probability as tfp
 
+from tensorflow.keras import layers
 
 
 class ActorNetwork(keras.Model):
-    def __init__(self, n_actions, l1_dims=256, l2_dims=256, **kwargs):
+    def __init__(self, n_actions, fc1_dims=256, fc2_dims=256, **kwargs):
         super(ActorNetwork, self).__init__()
 
         self.n_actions = n_actions
 
-        self.lstm1 = layers.LSTM(64, activation='relu', return_sequences=True)
-        self.lstm2 = layers.LSTM(64, activation='relu')
-        self.fc1 = layers.Dense(256, activation='relu')
-        self.fc2 = layers.Dense(n_actions, activation='softmax')
+        self.fc1 = layers.Dense(fc1_dims, activation='relu')
+        self.fc2 = layers.Dense(fc2_dims, activation='relu')
+        self.fc3 = layers.Dense(n_actions, activation='softmax')
 
     def call(self, state):
-        x = self.lstm1(state)
-        x = self.lstm2(x)
-        x = self.fc1(x)
+        x = self.fc1(state)
         x = self.fc2(x)
+        x = self.fc3(x)
 
         return x
 
@@ -30,21 +28,17 @@ class ActorNetwork(keras.Model):
         config = super(ActorNetwork, self).get_config()
         config.update({'n_actions': self.n_actions})
         return config
-    
-
 
 class CriticNetwork(keras.Model):
     def __init__(self, fc1_dims=256, fc2_dims=256, **kwargs):
         super(CriticNetwork, self).__init__()
-        self.lstm1 = layers.LSTM(64, activation='relu', return_sequences=True)
-        self.lstm2 = layers.LSTM(64, activation='relu')
-        self.fc1 = layers.Dense(256, activation='relu')
-        self.q = layers.Dense(1, activation=None)   
+        self.fc1 = layers.Dense(fc1_dims, activation='relu')
+        self.fc2 = layers.Dense(fc2_dims, activation='relu')
+        self.q = layers.Dense(1, activation=None)
 
     def call(self, state):
-        x = self.lstm1(state)
-        x = self.lstm2(x)
-        x = self.fc1(x)
+        x = self.fc1(state)
+        x = self.fc2(x)
         q = self.q(x)
 
         return q
@@ -145,7 +139,8 @@ class Agent:
         action = action.numpy()[0]
         value = value.numpy()[0]
         log_prob = log_prob.numpy()[0]
-        return action, log_prob, value
+
+        return action[0], log_prob, value
 
     def learn(self):
         for _ in range(self.n_epochs):

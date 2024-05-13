@@ -21,6 +21,9 @@ class ActorNetwork(keras.Model):
     def call(self, state):
         x = self.lstm1(state)
         x = self.lstm2(x)
+
+        x = tf.concat([x, state[:][-1][:]], axis=1)
+
         x = self.fc1(x)
         x = self.fc2(x)
 
@@ -44,6 +47,9 @@ class CriticNetwork(keras.Model):
     def call(self, state):
         x = self.lstm1(state)
         x = self.lstm2(x)
+
+        x = tf.concat([x, state[:][-1][:]], axis=1)
+
         x = self.fc1(x)
         q = self.q(x)
 

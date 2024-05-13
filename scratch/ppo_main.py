@@ -6,66 +6,69 @@ import subprocess
 import random
 
 import matplotlib.pyplot as plt
-def plot_learning_curve(x, scores, figure_file):
-    running_avg = np.zeros(len(scores))
-    for i in range(len(running_avg)):
-        running_avg[i] = np.mean(scores[max(0, i-100):(i+1)])
-    plt.plot(x, running_avg)
-    plt.title('Running average of previous 100 scores')
-    plt.savefig(figure_file)
 
 
+model_id = 3        # Select network 
+training_n = 2      # Select training case
+
+# RNN Memory duration (0 or 1 for non-RNN network)
+time_steps = 15
+
+load_existing_model = False
 
 # ------------ Network selection -----------------------------------------------------------------------
-
-# Simple Deep networks
-from ppo_networks.ppo_agent_3_dense import Agent
-
-# RNNs and LSTMs
-#from ppo_networks.ppo_agent_LSTM_simple import Agent
+match model_id:
+    case 0:
+        from ppo_networks.debug import Agent
+    case 1:
+        from ppo_networks.ppo_agent_3_dense import Agent
+    case 2:
+        from ppo_networks.ppo_agent_LSTM_simple import Agent
+    case 3:
+        from ppo_networks.ppo_agent_LSTM_w_time_distribution import Agent
+    case 4:
+        from ppo_networks.ppo_agent_LSTM_skip import Agent
 
 
 
 # ------------- CONFIG ------------------------------------
 
-# MODEL NAME <--------------------- 
-model_name = "ppo_proto_v1"
-
-# RNN Memory duration (0 or 1 for non-RNN network)
-time_steps = 0
-
 # PATHS
 # Path to your ns-3 script file
-ns3_script = "scratch/tests/1/test_1.cc"
+training_network_names = ["line", "4_steps", "4_steps_tcp"]
+ns3_script = f"scratch/training_networks/{training_network_names[training_n]}/{training_network_names[training_n]}.cc"
 
 # Path for CWND size file
 cwnd_path = "scratch/rate.txt"
-cwnd_start = random.randint(512, 512 * 20) #1         * 512 # Multiply with minimum CWND size
 
-# Q-Model folder path
-model_folder_path = "models"
+packet_size = 512
+cwnd_start = random.randint(packet_size, packet_size * 20) 
+
+# Model folder path
+model_names = ["debug", "3dense", "simple_lstm", "lstm_time_dist", "lstm_skip"]
+model_folder_path = f"scratch/models/{model_names[model_id]}/train_{training_n}"
 os.makedirs(model_folder_path, exist_ok=True)
 
 # Training duration
 sample_frequency = 1 # Amount of steps/samples per second
-episodes = 50
+episodes = 200 #200
 steps_max = 400             * sample_frequency # First number indicates training duration in simulated seconds
 
 # Batch size - Amount of steps done before training on them at once
 batch_size = 64 
 
 # Number of batches to collect before training on them seperatly
-n_epochs = 10
+n_epochs = 1
 
 # Learning hyperparameters
 learning_rate = 0.0005
 discount_rate = 0.99
 
 # Exploration
-exploration_rate       = 1
-exploration_rate_max   = 1
-exploration_rate_min   = 0.1
-exploration_rate_decay = 0.005
+exploration_rate       = 0
+exploration_rate_max   = 0
+exploration_rate_min   = 0
+exploration_rate_decay = 0
 
 
 
@@ -73,26 +76,37 @@ exploration_rate_decay = 0.005
 actions = [False,             # Nothing
            lambda x: x + 3,   # Increase by 10
            lambda x: x - 1,   # Decrease by 1
-           lambda x: x * 1.1, # Increase by 10%
-           lambda x: x * 0.9  # Decrease by 10%
+           lambda x: x * 1.25, # Increase by 10%
+           lambda x: x * 0.75  # Decrease by 10%
            ]
 
 # State sizes
-state_size_send    = 12 # Different states based on amount of packets send
-state_size_acks    = 12 # Different states based on amount of packets dropped
-state_size_rtt     = 12 # Different states based on rtt
-states = (state_size_send, state_size_acks, state_size_rtt)
+states = (0,1,2,3)#(state_size_send, state_size_acks, state_size_rtt, rtt_dev)
 
+# Custom Max normalization initalial values
+max_norm_initials = [2000, 2000, 200, 200]
 
+# Reward factors 
+reward_factor_alpha = 5 # 
+reward_factor_beta   = 0.1 # 
 
-
-# Reward factors TODO
-reward_factor_bytes = 1 # 
-reward_factor_rtt   = 5 # 
 reward_factor_ack_ratio = 1 #
 utility = 0 
 utility_threshold = 0.9 # How big should a change be before a reward/penalty is given
 utility_reward = 5    # Size of reward/penalty
+
+# Simulation parameters and information
+                                                # Update value whenever test throughput changes
+"""throughput_test_list = [lambda x: [120e3] * (x//5) + [60e3] * (x//5) + [90e3] * (x//5) + [30e3] * (x//5) + [120e3] * (x - 4*(x//5)), # Train 1 - 120kBps -> 60kBps -> 90kBps -> 30kBps -> 120kBps
+                        lambda x: [60e3] * (x//5) + [30e3] * (x//5) + [45e3] * (x//5) + [15e3] * (x//5) + [60e3] * (x - 4*(x//5)),
+                        lambda x: [120e3] * x]"""
+throughput_test_list = [lambda x: [120e3] * x,
+                        lambda x: [ 60e3] * x,
+                        lambda x: [120e3] * x]
+throughput_available_max = throughput_test_list[training_n - 1](steps_max)
+throughput_udp = [0,0]
+
+
 
 last_rtt = None
 
@@ -103,15 +117,27 @@ state_log = ""
 
 best_score = -np.infty
 score_history = []
-figure_file = "models/rewards.png"
+figure_file = model_folder_path + "/rewards.png"
 # ------------- Functions ----------------------------------
+
+def plot_learning_curve(x, scores, figure_file):
+    running_avg = np.zeros(len(scores))
+    for i in range(len(running_avg)):
+        running_avg[i] = np.mean(scores[max(0, i-30):(i+1)])
+    plt.plot(x, running_avg, label='Running Average')
+    plt.title('Average Score Over Episodes')
+    plt.xlabel('Episodes')
+    plt.ylabel('Average Score')
+    plt.legend()
+    plt.savefig(figure_file, dpi=500)
+
 
 def get_next_state(process): 
     
     # read the simulation output or wait for it to finish
     reading = process.stdout.readline()
     temp_list = reading.split('\n')[0].split(',')
-    [send, acks, send_bytes, received_bytes, rtt] = [int(xx) for xx in temp_list] 
+    [send, acks, send_bytes, received_bytes, rtt, rtt_dev] = [float(xx) for xx in temp_list] 
     
     global state_log
     state_log += reading
@@ -125,34 +151,46 @@ def get_next_state(process):
     
     finished = False
     
-    state_array = np.array([send, acks, rtt])
+    state_array = np.array([send, acks, rtt, rtt_dev])
 
-    return np.reshape(state_array, (1,3)) , (received_bytes, ack_perc, finished)
+    return np.reshape(state_array, (1,4)) , (received_bytes, send_bytes, ack_perc, finished)
     return (state_send, state_acks, state_rtt), (n_bytes, ack_perc, finished)
 
-def get_reward(n_bytes, ack_perc, rtt): 
+def get_reward(received_bytes, send_bytes, rtt): 
     # Declare utility as global... otherwise errors
     global utility
     global last_rtt
 
+    global throughput_available_max
+    global step
 
-    if n_bytes == 0: n_bytes = 1
-    if ack_perc == 0: ack_perc = 1
+    throughput_available_percent = 1
+    if 80 <= step <= 160 or 240 <= step <= 320: throughput_available_percent -= throughput_udp[0]
+    if 160 <= step <= 320: throughput_available_percent -= throughput_udp[1]
+
+    throughput_available = throughput_available_max[step] * throughput_available_percent
+
     if rtt == 0: rtt = last_rtt
     
     last_rtt = rtt
     
-    utility_new = (np.log2(n_bytes) * reward_factor_bytes - np.log2(rtt) * reward_factor_rtt) #* ack_perc 
-    return utility_new
-    reward = 0
-    
-    
-    if   utility_new - utility > utility_threshold: reward = utility_reward
-    elif utility - utility_new > utility_threshold: reward = -utility_reward
-    
-    utility = utility_new
+    reward_alpha = 0
 
-    return reward
+    
+    
+    # If no data is send with no capacity 
+    if send_bytes == 0 and throughput_available == 0:
+        return reward_factor_alpha
+    elif send_bytes != 0 and throughput_available != 0:
+        c_utility = (1 - abs(1 - (send_bytes / throughput_available)))
+        if c_utility < 0:
+            reward_alpha = reward_factor_alpha * c_utility
+        else: 
+            reward_alpha = reward_factor_alpha * (received_bytes / send_bytes) * c_utility
+    
+    reward_beta = (rtt**0.5) * reward_factor_beta
+
+    return reward_alpha - reward_beta
 
 def perform_action(process, action):
     global cwnd_log  
@@ -160,14 +198,14 @@ def perform_action(process, action):
     if action != False:
         cwnd = 0
         with open(cwnd_path, 'r') as file:
-            cwnd = float(file.read()) / 512 # Divide with minimum size of packets ...
+            cwnd = float(file.read()) / packet_size # Divide with minimum size of packets ...
             #print(cwnd, action)
             
-            cwnd = actions[action](cwnd) * 512 # Multiply with minimum size of packets ...
+            cwnd = actions[action](cwnd) * packet_size # Multiply with minimum size of packets ...
             
         cwnd = int(cwnd // 1) # Only whole amounts of bytes
         
-        if cwnd < 512: cwnd = 512
+        if cwnd < packet_size: cwnd = packet_size
         cwnd_log += f"{cwnd}\n"
         with open(cwnd_path, 'w') as file:
             file.write(f"{cwnd}")
@@ -182,36 +220,44 @@ def perform_action(process, action):
     process.stdin.flush()
     
     # get new state 
-    new_state, (n_bytes, ack_perc, finished) = get_next_state(process) 
-    
+    new_state, (received_bytes, send_bytes, ack_perc, finished) = get_next_state(process) 
+
     
     
     # Calculate reward based on new state 
     #reward = get_reward(n_bytes, ack_perc, state[0][2])
-    reward = get_reward(state[0][1], ack_perc, state[0][2])
+    reward = get_reward(received_bytes, send_bytes, new_state[0][2])
     
     return new_state, reward, finished
 
 # ------------- Normalization struct -----------------------------
 
-class normalization():
-    def __init__(self, state_len) -> None:
-        self.count = 0
-        self.mean = [0] * state_len
-        self.deviation = [0] * state_len
+class Normalization():
+    def __init__(self, state_len, max_norm_initials=[0,0,0,0]) -> None:
+        self.max = [0] * state_len
+        if state_len == len(max_norm_initials): self.max = max_norm_initials
+        else: print("Custom max normalization not in use, different state size expected")
+        self.min = [0] * state_len
     
     def update(self, new_values):
-        self.count += 1
         for ii, new_value in enumerate(new_values[0]):
-            delta1 = new_value - self.mean[ii]
-            self.mean[ii] += delta1 / self.count
-
-            delta2 = new_value -self.mean[ii]
-            self.deviation[ii] += delta1 * delta2
-
+            if self.min[ii] > new_value:
+                self.min[ii] = new_value
+            elif self.max[ii] < new_value:
+                self.max[ii] = new_value
+            if ii < 2:
+                if self.min[(ii+1)%2] > new_value:
+                    self.min[(ii+1)%2] = new_value
+                elif self.max[(ii+1)%2] < new_value:
+                    self.max[(ii+1)%2] = new_value
+            else:
+                if self.min[((ii+1)%2)+2] > new_value:
+                    self.min[((ii+1)%2)+2] = new_value
+                elif self.max[((ii+1)%2)+2] < new_value:
+                    self.max[((ii+1)%2)+2] = new_value
+        
     def normalize(self, values):
-        print(self.count, self.mean, self.deviation, values)
-        return [[(value - self.mean[ii]) / self.deviation[ii] for ii, value in enumerate(values[0])]]
+        return [[(value - self.min[ii]) / (self.max[ii] - self.min[ii]) for ii, value in enumerate(values[0])]]
 
 
 # ------------- Initialization -----------------------------
@@ -225,11 +271,17 @@ agent = Agent(n_actions     = len(actions),     # Action space
               gamma         = discount_rate,    # Discount rate
               gae_lambda    = 0.95,             # GAE advantage parameter
               chkpt_dir     = model_folder_path + '/')
+
+if load_existing_model: agent.load_models()
+
 # Reward storage
 rewards_all_episodes = []
 
 # Input normalization struct list
+normalizer = Normalization(len(states), max_norm_initials)
 
+time_list = []
+time_start = time.time()
 
 # ------------- Training loops ---------------------------
 print("Training start")
@@ -242,6 +294,16 @@ for episode in range(episodes): #-----------------------------------Episode-----
 	
     # Start NS3 Simulation as subprocess
     process = subprocess.Popen(["./ns3", "run", ns3_script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    # Assign UDP rates for the training scenario
+    throughput_udp[0] = random.uniform(0.1, 0.8)
+    throughput_udp[1] = random.uniform(0.1, 0.9 - throughput_udp[0])
+    
+    udp_rates = [throughput_available_max[0] / 1000 * throughput_udp[0], throughput_available_max[0] / 1000 * throughput_udp[1]]
+    
+    process.stdin.write(f"{udp_rates[0]:.2f}kBps;{udp_rates[1]:.2f}kBps?\n")
+    process.stdin.flush()
+    # Wait for simulation to start
     while "Simulation" not in process.stdout.readline(): 
         time.sleep(sleep_time)
 	
@@ -251,10 +313,11 @@ for episode in range(episodes): #-----------------------------------Episode-----
 
     
     # Get first state
-    state, (n_bytes, ack_perc, _)  = get_next_state(process)
-    get_reward(n_bytes, ack_perc, state[0][2]) # Set utulity value
+    state, (received_bytes, send_bytes, ack_perc, _)  = get_next_state(process)
+    #get_reward(received_bytes, send_bytes, state[0][2]) # Set utulity value
 
-    
+    normalizer.update(state)    
+    state = normalizer.normalize(state)
 
     if time_steps != 0 and time_steps != 1:
         padding = np.zeros((time_steps-1, len(states)))
@@ -265,6 +328,8 @@ for episode in range(episodes): #-----------------------------------Episode-----
         # Get action
         action, probabilities,  val = agent.choose_action(state)
         
+        if random.uniform(0, 1) < exploration_rate: action = random.randrange(len(actions))
+
         #print(action, probabilities, val)
 
         #print(state, action)
@@ -283,11 +348,11 @@ for episode in range(episodes): #-----------------------------------Episode-----
         if step % batch_size == batch_size - 1 or step == steps_max - 1:
             agent.learn()
         
-
-
+        normalizer.update(new_state)
+        new_state = normalizer.normalize(new_state)
         # Updata state
         if time_steps == 0 or time_steps == 1:
-            state = new_state
+            state = new_state # Normalization here
         elif time_steps > 1:
             state = np.vstack((state, new_state))
             if len(state) > time_steps: 
@@ -298,24 +363,30 @@ for episode in range(episodes): #-----------------------------------Episode-----
         # Last part of episode code goes here
         if done or step == steps_max - 1:
             break
-        #  ------------------------------------------------STEP END------------------------------------------------ 
+    #  ------------------------------------------------STEP END------------------------------------------------ 
 
+    exploration_rate = exploration_rate_min + (exploration_rate_max - exploration_rate_min) * np.exp(-exploration_rate_decay * episode)
+    
     # Close process
     process.terminate()
     
     # Save reward
-    rewards_all_episodes.append(reward_episode)
+    rewards_all_episodes.append(reward_episode/400)
     
-    score_history.append(reward_episode)
-    avg_score = np.mean(score_history[-100:])
+    score_history.append(reward_episode/400)
+    moving_avg_score = np.mean(score_history[-30:])
 
-    if avg_score > best_score:
-        best_score = avg_score
+    if moving_avg_score > best_score:
+        best_score = moving_avg_score
         agent.save_models()
 
-    
+
+    time_new = time.time() - time_start
+    if len(time_list) > 0: time_new -= time_list[-1]
+    time_list.append(time_new)
+
     # Print completed epochs
-    print('episode', episode, 'score %.1f' % reward_episode, 'avg score %.1f' % avg_score)
+    print(f"episode: {episode}, avg score: {reward_episode/400}, duration: {time_new:.3e}")
     #print(f"Episode {episode} complete, reward of: {reward_episode}")
     
     with open("scratch/cwnd_log.txt", 'w') as file:
@@ -339,5 +410,11 @@ plot_learning_curve(x, score_history, figure_file)
 #agent.save_models()
 
 print("Reward over episodes")
-for ii, reward in enumerate(rewards_all_episodes): print(ii,reward)
+for ii, reward in enumerate([ii for ii in rewards_all_episodes]): print(ii,reward)
 
+print(f"\nTimes:")
+print(time_list)
+
+print(f"\nTotal training time: {sum(time_list):.3e}")
+print(f"Fastest training time: {min(time_list):.3e}")
+print(f"Slowest training time: {max(time_list):.3e}")

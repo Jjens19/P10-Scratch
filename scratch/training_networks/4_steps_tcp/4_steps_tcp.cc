@@ -105,7 +105,18 @@ int main(int argc, char *argv[])
     RngSeedManager::SetSeed(1);
     RngSeedManager::SetRun(1);
     
+    std::string udpRates;
+    while(udpRates.empty()){
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        std::getline(std::cin, udpRates);
+    }
 
+    size_t pos1 = udpRates.find(';');
+    size_t pos2 = udpRates.find('?');
+
+    
+    g_client1SendRate = udpRates.substr(0, pos1);
+    g_client2SendRate = udpRates.substr(pos1+1, pos2 - pos1 - 1);
 
     #if 1
     LogComponentEnable("Project", LOG_LEVEL_INFO);
@@ -172,7 +183,7 @@ int main(int argc, char *argv[])
     // Set TCP LinuxReno for node 9
     SetTcpCongestionControl(terminals.Get(9), "ns3::TcpLinuxReno");
     // Set TCP Cubic for node 8
-    //SetTcpCongestionControl(terminals.Get(8), "ns3::TcpCubic");
+    SetTcpCongestionControl(terminals.Get(8), "ns3::TcpCubic");
 
 	// Correctly obtain the address of N0, the receiver
 	Ipv4Address receiverAddress0 = interfaces.GetAddress(0);
@@ -185,6 +196,9 @@ int main(int argc, char *argv[])
     OnOffHelper onoff0("ns3::TcpSocketFactory", Address(InetSocketAddress(Ipv4Address("10.1.1.1"), port)));
     onoff0.SetConstantRate(DataRate(g_agentSendRate),g_packetSize);
 
+    OnOffHelper onoff1("ns3::TcpSocketFactory", Address(InetSocketAddress(Ipv4Address("10.1.1.2"), port)));
+    onoff1.SetConstantRate(DataRate(g_throughput),g_packetSize);
+
     ApplicationContainer app1 = onoff0.Install(terminals.Get(9));
     app1.Get(0)->TraceConnectWithoutContext("Tx", MakeCallback(&TxPacketsTrace));
     
@@ -194,13 +208,20 @@ int main(int argc, char *argv[])
     // Schedule RTT trace setup to occur shortly after the application starts
     Simulator::Schedule(Seconds(0.001), &SetupRttTrace, app1.Get(0), "RTT", MakeCallback(&RttChange));
 
+    ApplicationContainer app2 = onoff1.Install(terminals.Get(8));
+    
+    app2.Start(Seconds(0));
+    app2.Stop(Seconds(g_simLength));
 
+    
     // Create packetsink helper
 	PacketSinkHelper sink("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), port));
 
     // Create sink apps
 	ApplicationContainer sinkApp0 = sink.Install(terminals.Get(0)); // N0 as receiver
     sinkApp0.Get(0)->TraceConnectWithoutContext("Rx", MakeCallback(&RxPacketsTrace));
+
+	ApplicationContainer sinkApp1 = sink.Install(terminals.Get(1)); // N1 as receiver
 
     PacketSinkHelper udpSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), port));
     ApplicationContainer udpSinkApp1 = udpSinkHelper.Install(terminals.Get(2));  
@@ -209,6 +230,9 @@ int main(int argc, char *argv[])
     // Start and stop sinkapps
 	sinkApp0.Start(Seconds(0.0));
 	sinkApp0.Stop (Seconds(g_simLength));
+
+    sinkApp1.Start(Seconds(0.0));
+	sinkApp1.Stop (Seconds(g_simLength));
 
     udpSinkApp1.Start(Seconds(0.0));
     udpSinkApp1.Stop (Seconds(g_simLength));
@@ -224,26 +248,25 @@ int main(int argc, char *argv[])
     OnOffHelper onoff2 ("ns3::UdpSocketFactory", Address(InetSocketAddress(Ipv4Address("10.1.1.3"), port)));
     onoff2.SetConstantRate(DataRate(g_client1SendRate));
 
-    ApplicationContainer app2 = onoff2.Install(terminals.Get(7));
-    /*
+    ApplicationContainer app4 = onoff2.Install(terminals.Get(7));
+    
     OnOffHelper onoff3 ("ns3::UdpSocketFactory", Address(InetSocketAddress(Ipv4Address("10.1.1.4"), port)));
     onoff3.SetConstantRate(DataRate(g_client2SendRate));
 
     ApplicationContainer app3 = onoff3.Install(terminals.Get(6));
 
-    */
+    
 
     // 50%
-    app2.Start(Seconds(offset + 200));
-    app2.Stop( Seconds(offset + g_simLength));
-    /*
-    app2.Start(Seconds(offset + 240));
-    app2.Stop( Seconds(offset + 320));
+    app4.Start(Seconds(offset + 80));
+    app4.Stop( Seconds(offset + 160));
+    app4.Start(Seconds(offset + 240));
+    app4.Stop( Seconds(offset + 320));
     
     // 25%
     app3.Start(Seconds(offset + 160));
     app3.Stop( Seconds(offset + 320));
-    */
+    
 
 
 
@@ -269,7 +292,13 @@ int main(int argc, char *argv[])
     Simulator::Stop(Seconds(1.0));
     Simulator::Run();
 
+    std::string command = "";
 
+    // Read input from Python process
+    while(command.empty()){
+    	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    	std::getline(std::cin, command);
+    }
 
     do
     {
@@ -298,8 +327,12 @@ int main(int argc, char *argv[])
 
 	    std::cout << g_packetCount << "," << g_ackReceived << ","  << g_bytesSent << "," << g_ackReceived * g_packetSize << "," << avgRtt << "," << rttDev << std::endl;
     	
+        command = "";
+	    while(command.empty()){
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            std::getline(std::cin, command);
+    	}
         
-
     } while (total<g_simLength);
 
     

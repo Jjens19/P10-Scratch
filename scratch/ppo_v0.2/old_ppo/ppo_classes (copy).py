@@ -1,62 +1,10 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow.keras as keras
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import layers
+from tensorflow.keras import layers, models, optimizers
 import tensorflow_probability as tfp
 
 
-
-class ActorNetwork(keras.Model):
-    def __init__(self, n_actions, l1_dims=256, l2_dims=256, **kwargs):
-        super(ActorNetwork, self).__init__()
-
-        self.n_actions = n_actions
-
-        self.lstm1 = layers.LSTM(64, activation='relu', return_sequences=True)
-        self.lstm2 = layers.LSTM(64, activation='relu')
-        self.fc1 = layers.Dense(256, activation='relu')
-        self.fc2 = layers.Dense(n_actions, activation='softmax')
-
-    def call(self, state):
-        x = self.lstm1(state)
-        x = self.lstm2(x)
-        x = self.fc1(x)
-        x = self.fc2(x)
-
-        return x
-
-    def get_config(self):
-        config = super(ActorNetwork, self).get_config()
-        config.update({'n_actions': self.n_actions})
-        return config
-    
-
-
-class CriticNetwork(keras.Model):
-    def __init__(self, fc1_dims=256, fc2_dims=256, **kwargs):
-        super(CriticNetwork, self).__init__()
-        self.lstm1 = layers.LSTM(64, activation='relu', return_sequences=True)
-        self.lstm2 = layers.LSTM(64, activation='relu')
-        self.fc1 = layers.Dense(256, activation='relu')
-        self.q = layers.Dense(1, activation=None)   
-
-    def call(self, state):
-        x = self.lstm1(state)
-        x = self.lstm2(x)
-        x = self.fc1(x)
-        q = self.q(x)
-
-        return q
-    
-
-
-
-
-
-
-################################################################################################################################################
-
+# ------------- PPO Step memory ---------------------------------
 class PPOMemory:
     def __init__(self, batch_size):
         self.states = []
@@ -100,8 +48,47 @@ class PPOMemory:
         self.vals = []
 
 
+# ------------- PPO Actor ---------------------------------
+
+class ActorNetwork(tf.keras.Model):
+    def __init__(self, n_actions, fc1_dims=256, fc2_dims=256):
+        super(ActorNetwork, self).__init__()
+
+        self.fc1 = layers.Dense(fc1_dims, activation='relu')
+        self.fc2 = layers.Dense(fc2_dims, activation='relu')
+        self.flatten = layers.Flatten()
+        self.fc3 = layers.Dense(n_actions, activation='softmax')
+
+    def call(self, state):
+        x = self.fc1(state)
+        x = self.flatten(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+
+        return x
+
+# ------------- PPO Critic ---------------------------------
+
+class CriticNetwork(tf.keras.Model):
+    def __init__(self, fc1_dims=256, fc2_dims=256):
+        super(CriticNetwork, self).__init__()
+        self.fc1 = layers.Dense(fc1_dims, activation='relu')
+        self.fc2 = layers.Dense(fc2_dims, activation='relu')
+        self.flatten = layers.Flatten()
+        self.q = layers.Dense(1, activation=None)
+
+    def call(self, state):
+        x = self.fc1(state)
+        x = self.flatten(x)
+        x = self.fc2(x)
+        q = self.q(x)
+
+        return q
+    
 
 
+
+# ------------- PPO Agent ---------------------------------
 
 class Agent:
     def __init__(self, n_actions, input_dims, gamma=0.99, alpha=0.0003,
@@ -114,9 +101,9 @@ class Agent:
         self.chkpt_dir = chkpt_dir
 
         self.actor = ActorNetwork(n_actions)
-        self.actor.compile(optimizer=Adam(learning_rate=alpha))
+        self.actor.compile(optimizer=optimizers.Adam(learning_rate=alpha))
         self.critic = CriticNetwork()
-        self.critic.compile(optimizer=Adam(learning_rate=alpha))
+        self.critic.compile(optimizer=optimizers.Adam(learning_rate=alpha))
         self.memory = PPOMemory(batch_size)
 
     def store_transition(self, state, action, probs, vals, reward, done):
@@ -124,14 +111,13 @@ class Agent:
 
     def save_models(self):
         print('... saving models ...')
-        self.actor.save(self.chkpt_dir + 'actor.keras')
-        self.critic.save(self.chkpt_dir + 'critic.keras')
+        self.actor.save(self.chkpt_dir + 'actor')
+        self.critic.save(self.chkpt_dir + 'critic')
 
     def load_models(self):
         print('... loading models ...')
-        custom_objects = {'ActorNetwork': ActorNetwork}
-        self.actor = keras.models.load_model(self.chkpt_dir + 'actor.keras', custom_objects=custom_objects)
-        self.critic = keras.models.load_model(self.chkpt_dir + 'critic.keras')
+        self.actor = models.load_model(self.chkpt_dir + 'actor')
+        self.critic = models.load_model(self.chkpt_dir + 'critic')
 
     def choose_action(self, observation):
         state = tf.convert_to_tensor([observation])
@@ -145,6 +131,7 @@ class Agent:
         action = action.numpy()[0]
         value = value.numpy()[0]
         log_prob = log_prob.numpy()[0]
+
         return action, log_prob, value
 
     def learn(self):
@@ -192,7 +179,7 @@ class Agent:
                     returns = advantage[batch] + values[batch]
                     # critic_loss = tf.math.reduce_mean(tf.math.pow(
                     #                                  returns-critic_value, 2))
-                    critic_loss = keras.losses.MSE(critic_value, returns)
+                    critic_loss = tf.keras.losses.MSE(critic_value, returns)
 
                 actor_params = self.actor.trainable_variables
                 actor_grads = tape.gradient(actor_loss, actor_params)

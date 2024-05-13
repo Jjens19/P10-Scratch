@@ -104,8 +104,6 @@ int main(int argc, char *argv[])
 {
     RngSeedManager::SetSeed(1);
     RngSeedManager::SetRun(1);
-    
-
 
     #if 1
     LogComponentEnable("Project", LOG_LEVEL_INFO);
@@ -225,25 +223,24 @@ int main(int argc, char *argv[])
     onoff2.SetConstantRate(DataRate(g_client1SendRate));
 
     ApplicationContainer app2 = onoff2.Install(terminals.Get(7));
-    /*
+    
     OnOffHelper onoff3 ("ns3::UdpSocketFactory", Address(InetSocketAddress(Ipv4Address("10.1.1.4"), port)));
     onoff3.SetConstantRate(DataRate(g_client2SendRate));
 
     ApplicationContainer app3 = onoff3.Install(terminals.Get(6));
 
-    */
+    
 
     // 50%
-    app2.Start(Seconds(offset + 200));
-    app2.Stop( Seconds(offset + g_simLength));
-    /*
+    app2.Start(Seconds(offset + 80));
+    app2.Stop( Seconds(offset + 160));
     app2.Start(Seconds(offset + 240));
     app2.Stop( Seconds(offset + 320));
     
     // 25%
     app3.Start(Seconds(offset + 160));
     app3.Stop( Seconds(offset + 320));
-    */
+    
 
 
 
@@ -263,13 +260,18 @@ int main(int argc, char *argv[])
     uint32_t RttCount = 0;
     double avgRtt = 0;
 
-
     //NS_LOG_INFO("Run Simulation.");
     std::cout << "Run Simulation" << std::endl;
     Simulator::Stop(Seconds(1.0));
     Simulator::Run();
 
+    std::string command = "";
 
+    // Read input from Python process
+    while(command.empty()){
+    	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    	std::getline(std::cin, command);
+    }
 
     do
     {
@@ -298,8 +300,12 @@ int main(int argc, char *argv[])
 
 	    std::cout << g_packetCount << "," << g_ackReceived << ","  << g_bytesSent << "," << g_ackReceived * g_packetSize << "," << avgRtt << "," << rttDev << std::endl;
     	
+        command = "";
+	    while(command.empty()){
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            std::getline(std::cin, command);
+    	}
         
-
     } while (total<g_simLength);
 
     
